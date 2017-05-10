@@ -95,7 +95,7 @@ int Application::main(int argc,char *argv[])
 }
 
 
-
+//
 void Application::identifyVariableRegions(const Vector<Variant> &sites,
 					  Vector<VariableRegion> &into)
 {
