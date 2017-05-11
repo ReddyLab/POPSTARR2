@@ -457,36 +457,36 @@ void Application::personalize(String &seq,const HaplotypeRecord &hapRec,
 			      const Vector<VariantAndGenotypes> &variants,
 			      int regionStart)
 {
-  //TRACE
   int numVariants=variants.size();
-  //TRACE
   if(hapRec.alleles.size()!=numVariants) INTERNAL_ERROR;
-  //TRACE
+  Interval prevInterval(0,0);
   for(int i=numVariants-1 ; i>=0 ; --i) {
-    //TRACE
     const Variant &variant=variants[i].variant;
-    //TRACE
     if(variant.isIndel()) {
-      //TRACE
       const int allele=hapRec.alleles[i];
-      //TRACE
       if(allele==0) continue; // reference
-      //TRACE
       const int refLen=variant.getAllele(0).length();
-      //TRACE
       const String &altAllele=variant.getAllele(allele);
-      //TRACE
       //cout<<"indel "<<variant.getPos()<<" "<<regionStart<<" "<<variant.getPos()-regionStart<<" "<<refLen<<endl;
+      String refCheck=seq.substring(variant.getPos()-1-regionStart,refLen);
+      refCheck.toupper();
+      String altCheck=variant.getAllele(0);
+      altCheck.toupper();
+      if(refCheck!=altCheck) {
+	cout<<seq.substring(variant.getPos()-1-regionStart,refLen)<<" vs "<<variant.getAllele(0)<<endl;
+	INTERNAL_ERROR;
+      }
       seq.replaceSubstring(variant.getPos()-1-regionStart,refLen,altAllele);
-      //TRACE
+      Interval thisInterval(variant.getPos()-1-regionStart,
+			    variant.getEnd()-1-regionStart);
+      if(thisInterval.overlaps(prevInterval)) INTERNAL_ERROR;
+      prevInterval=thisInterval;
     }
     else {
       //cout<<"SNP "<<variant.getPos()<<" "<<regionStart<<" "<<variant.getPos()-regionStart<<endl;
-      seq[variant.getPos()-1-regionStart]='N';
+      //seq[variant.getPos()-1-regionStart]='N';
     }
-    //TRACE
   }
-  //TRACE
 }
 
 
