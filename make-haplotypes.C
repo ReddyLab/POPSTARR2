@@ -71,7 +71,7 @@ private:
 		   Vector<HaplotypeRecord> &into);
   //void uniquify(Vector<HaplotypeRecord> &);
   void personalize(String &seq,const HaplotypeRecord &,
-		   const Vector<VariantAndGenotypes> &);
+		   const Vector<VariantAndGenotypes> &,int regionStart);
 };
 
 
@@ -433,9 +433,6 @@ void Application::makeHaplotypes(const VariableRegion &region,
   if(records.empty()) throw "No records found for region";
   Vector<HaplotypeRecord> hapRecs;
   makeHapRecs(records,hapRecs);
-  /*cout<<"Before:\t"<<hapRecs.size();
-  uniquify(hapRecs);
-  cout<<"\tAfter:\t"<<hapRecs.size()<<endl;*/
   FastaWriter writer;
   Set<String> seen;
   String baseDef=String(">hap:")+region.chr+":"+region.interval.getBegin()
@@ -445,7 +442,7 @@ void Application::makeHaplotypes(const VariableRegion &region,
 	end=hapRecs.end() ; cur!=end ; ++cur) {
     const HaplotypeRecord &hapRec=*cur;
     String alt=ref;
-    personalize(alt,hapRec,records);
+    personalize(alt,hapRec,records,region.interval.getBegin());
     if(seen.isMember(alt)) continue;
     seen+=alt;
     String def=baseDef+"_"+hapID;
@@ -457,21 +454,39 @@ void Application::makeHaplotypes(const VariableRegion &region,
 
 
 void Application::personalize(String &seq,const HaplotypeRecord &hapRec,
-			      const Vector<VariantAndGenotypes> &variants)
+			      const Vector<VariantAndGenotypes> &variants,
+			      int regionStart)
 {
+  //TRACE
   int numVariants=variants.size();
+  //TRACE
   if(hapRec.alleles.size()!=numVariants) INTERNAL_ERROR;
-  for(int i=0 ; i<numVariants ; ++i) {
+  //TRACE
+  for(int i=numVariants-1 ; i>=0 ; --i) {
+    //TRACE
     const Variant &variant=variants[i].variant;
+    //TRACE
     if(variant.isIndel()) {
+      //TRACE
       const int allele=hapRec.alleles[i];
+      //TRACE
       if(allele==0) continue; // reference
+      //TRACE
       const int refLen=variant.getAllele(0).length();
+      //TRACE
       const String &altAllele=variant.getAllele(allele);
-      seq.replaceSubstring(variant.getPos(),refLen,altAllele);
+      //TRACE
+      //cout<<"indel "<<variant.getPos()<<" "<<regionStart<<" "<<variant.getPos()-regionStart<<" "<<refLen<<endl;
+      seq.replaceSubstring(variant.getPos()-1-regionStart,refLen,altAllele);
+      //TRACE
     }
-    else seq[variant.getPos()]='N';
+    else {
+      //cout<<"SNP "<<variant.getPos()<<" "<<regionStart<<" "<<variant.getPos()-regionStart<<endl;
+      seq[variant.getPos()-1-regionStart]='N';
+    }
+    //TRACE
   }
+  //TRACE
 }
 
 
