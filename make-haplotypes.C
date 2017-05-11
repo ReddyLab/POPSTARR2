@@ -11,26 +11,73 @@
 #include "BOOM/FastaWriter.H"
 #include "BOOM/Pipe.H"
 #include "BOOM/Interval.H"
+#include "BOOM/Map.H"
+#include "BOOM/Time.H"
 using namespace std;
 using namespace BOOM;
 
+/****************************************************************
+ VariableRegion
+ ****************************************************************/
 struct VariableRegion {
   String chr;
   Interval interval;
-  Vector<Variant> variants;
+  Vector<Variant> variants; // indels only
+  bool contains(const Variant &);
 };
 
+/****************************************************************
+ HaplotypeRecord
+ ****************************************************************/
+struct HaplotypeRecord {
+  Vector<int> alleles;
+  String hash();
+};
+
+/****************************************************************
+ Application
+ ****************************************************************/
 class Application {
 public:
   Application();
   int main(int argc,char *argv[]);
 private:
   int READLEN;
+  Map<String,int> chromLen;
+  bool wantPrependChr;
   void identifyVariableRegions(const Vector<Variant> &,
 			       Vector<VariableRegion> &into);
+  int numIndels(const Vector<Variant> &);
+  void getChromLengths(const String &twoBitFile,Map<String,int> &into);
+  void prependChr(Vector<Variant> &);
+  void makeNgenome(Vector<Variant> &,const String &twoBitFile,
+		   const String &outfile);
+  void partitionByChr(const Vector<Variant> &,
+		      Map<String,Vector<Variant> > &into);
+  void getSeq(const String &twoBitFile,const String &chr,
+	      int begin,int end,String &into);
+  void getSeq(const String &twoBitFile,const VariableRegion &region,
+	      String &into);
+  void setNs(Vector<Variant> &,String &seq);
+  void getIndels(const Vector<Variant> &from,Vector<Variant> &into);
+  void makeHaplotypes(const Vector<VariableRegion> &,const String &vcfFile,
+		      const String &twoBitFile,const String &outfile);
+  void makeHaplotypes(const VariableRegion &region,
+		      const String &ref,
+		      VcfReader &,
+		      const String &twoBitFile,
+		      const String &outfile);
+  void makeHapRecs(const Vector<VariantAndGenotypes> &,
+		   Vector<HaplotypeRecord> &into);
+  //void uniquify(Vector<HaplotypeRecord> &);
+  void personalize(String &seq,const HaplotypeRecord &,
+		   const Vector<VariantAndGenotypes> &);
 };
 
 
+/****************************************************************
+ main()
+ ****************************************************************/
 int main(int argc,char *argv[])
 {
   try {
@@ -47,6 +94,24 @@ int main(int argc,char *argv[])
 
 
 
+bool VariableRegion::contains(const Variant &v)
+{
+  return chr==v.getChr() && interval.contains(v.getPos());
+}
+
+
+
+String HaplotypeRecord::hash()
+{
+  String h;
+  for(Vector<int>::const_iterator cur=alleles.begin(), end=alleles.end() ;
+      cur!=end ; ++cur)
+    h+=String(" ")+(*cur);
+  return h;
+}
+
+
+
 Application::Application()
 {
   // ctor
@@ -57,68 +122,93 @@ Application::Application()
 int Application::main(int argc,char *argv[])
 {
   // Process command line
-  CommandLine cmd(argc,argv,"");
+  CommandLine cmd(argc,argv,"c");
   if(cmd.numArgs()!=4)
-    throw String("make-haplotypes <in.vcf[.gz]> <genome.2bit> <readlength> <out.fasta>");
+    throw String("\n\
+make-haplotypes [opt] <in.vcf[.gz]> <genome.2bit> <readlength> <out.fasta>\n\
+  NOTE: twoBitToFa and twoBitInfo must be on your $PATH\n\
+  NOTE: If using bowtie, use the --np 0 and --n-ceil L,0,0.5 options\n\
+        to not penalize N's\n\
+  -c = prepend \"chr\" to chrom names in VCF\n\
+");
   const String vcfFilename=cmd.arg(0);
   const String twoBitFile=cmd.arg(1);
   const int readLen=cmd.arg(2).asInt();
   const String outfile=cmd.arg(3);
   READLEN=readLen;
+  wantPrependChr=cmd.option('c');
+
+  // Get chromosome lengths
+  getChromLengths(twoBitFile,chromLen);
+
+  // Make sure outfile doesn't exist
+  if(File::exists(outfile)) system((String("rm ")+outfile).c_str());
 
   // Get list of variable sites
+  cout<<getDateAndTime()<<endl;
+  cout<<"Getting list of variable sites"<<endl;
   Vector<Variant> varSites;
   int totalNumSites, numVarSites;
   VcfReader::getVariableSites(vcfFilename,varSites,totalNumSites,numVarSites);
-  cerr<<numVarSites<<" variable sites out of "<<totalNumSites<<endl;
+  if(wantPrependChr) prependChr(varSites);
+  cout<<numVarSites<<" variable sites out of "<<totalNumSites<<endl;
 
-  // Identify variable regions
+  // Identify variable regions containing indels
+  cout<<getDateAndTime()<<endl;
+  cout<<"Identifying variable regions"<<endl;
   Vector<VariableRegion> varRegions;
   identifyVariableRegions(varSites,varRegions);
   for(Vector<VariableRegion>::const_iterator cur=varRegions.begin(), end=
 	varRegions.end() ; cur!=end ; ++cur) {
     const VariableRegion &region=*cur;
-    //cout<<region.interval.length()<<"\t"<<region.variants.size()<<endl;
-    /*cout<<region.chr<<"\t"<<region.interval<<"\t";
-    for(Vector<Variant>::const_iterator cur=region.variants.begin(), 
-	  end=region.variants.end() ; cur!=end ; ++cur)
-      cout<<*cur<<"\t";
-      cout<<endl;*/
   }
 
   // Make haplotypes
+  cout<<getDateAndTime()<<endl;
+  cout<<"Making indel haplotypes"<<endl;
+  makeHaplotypes(varRegions,vcfFilename,twoBitFile,outfile);
 
+  // Make N-genome (genomic sequence with N's substituted for SNPs)
+  cout<<getDateAndTime()<<endl;
+  cout<<"Making N-genome"<<endl;
+  makeNgenome(varSites,twoBitFile,outfile);
 
-    // twoBitToFa -seq=chr3 -start=44593 -end=44675 hg19.2bit stdout
-
+  cout<<getDateAndTime()<<endl;
+  cout<<"[done]"<<endl;
   return 0;
 }
 
 
-//
-void Application::identifyVariableRegions(const Vector<Variant> &sites,
+
+void Application::identifyVariableRegions(const Vector<Variant> &allSites,
 					  Vector<VariableRegion> &into)
 {
-  const int numVarSites=sites.size();
+  Vector<Variant> indels;
+  getIndels(allSites,indels);
+  const int numIndels=indels.size();
   int currentSite=0;
-  while(currentSite<numVarSites) {
+  while(currentSite<numIndels) {
     VariableRegion region;
-    Variant firstVar=sites[currentSite];
+    Variant firstVar=indels[currentSite];
     region.variants.push_back(firstVar);
     region.chr=firstVar.getChr();
     int end=firstVar.getEnd();
     ++currentSite;
-    while(currentSite<numVarSites) {
-      Variant nextVar=sites[currentSite];
+    while(currentSite<numIndels) {
+      Variant nextVar=indels[currentSite];
       if(nextVar.getChr()!=region.chr || 
-	 nextVar.getBegin()-end>READLEN) break;
+	 nextVar.getBegin()-end>=READLEN) break;
       region.variants.push_back(nextVar);
       end=nextVar.getEnd();
       ++currentSite;
     }
     int begin=firstVar.getBegin()-READLEN+1;
     if(begin<0) begin=0;
-    end+=READLEN-1; // ### need to check for end of chromosome....?
+    end+=READLEN-1;
+    if(!chromLen.isDefined(region.chr))
+      throw String("chromosome ")+region.chr+" is not present in 2bit file";
+    const int L=chromLen[region.chr];
+    if(end>L) end=L;
     region.interval.setBegin(begin);
     region.interval.setEnd(end);
     into.push_back(region);
@@ -127,29 +217,262 @@ void Application::identifyVariableRegions(const Vector<Variant> &sites,
 
 
 
- /*
-void Application::identifyVariableRegions(const Vector<Variant> &sites,
-					  Vector<VariableRegion> &into)
+int Application::numIndels(const Vector<Variant> &variants)
 {
-  const int numVarSites=sites.size();
-  int currentSite=0;
-  while(currentSite<numVarSites) {
-    while(currentSite<numVarSites && !sites[currentSite].isIndel()) 
-    //while(currentSite<numVarSites && sites[currentSite].isIndel()) 
-      ++currentSite;
-    if(currentSite>=numVarSites) break;
-    Variant firstVar=sites[currentSite];
-    ++currentSite;
-    while(currentSite<numVarSites && !sites[currentSite].isIndel()) 
-    //while(currentSite<numVarSites && sites[currentSite].isIndel()) 
-      ++currentSite;
-    if(currentSite>=numVarSites) break;
-    Variant nextVar=sites[currentSite];
-    if(nextVar.getChr()!=firstVar.getChr()) continue;
-    int dist=nextVar.getBegin()-firstVar.getEnd();
-    cout<<dist<<endl;
-    if(dist<10) cout<<firstVar<<"\t"<<nextVar<<endl;
+  int n=0;
+  for(Vector<Variant>::const_iterator cur=variants.begin(), end=
+	variants.end() ; cur!=end ; ++cur)
+    if((*cur).isIndel()) ++n;
+  return n;
+}
+
+
+
+void Application::getChromLengths(const String &twoBitFile,
+				  Map<String,int> &into)
+{
+  String cmd=String("twoBitInfo ")+twoBitFile+" stdout";
+  Pipe pipe(cmd,"r");
+  while(!pipe.eof()) {
+    String line=pipe.getline(); line.trimWhitespace();
+    Vector<String> fields;
+    line.getFields(fields);
+    if(fields.size()!=2) continue;
+    String chr=fields[0];
+    const int L=int(fields[1]);
+    into[chr]=L;
+  }
+  pipe.close();
+}
+
+
+
+void Application::prependChr(Vector<Variant> &variants)
+{
+  for(Vector<Variant>::iterator cur=variants.begin(), end=variants.end() ;
+      cur!=end ; ++cur) {
+    Variant &variant=*cur;
+    String &chr=variant.getChr();
+    chr=String("chr")+chr;
   }
 }
- */
+
+
+
+void Application::partitionByChr(const Vector<Variant> &variants,
+				 Map<String,Vector<Variant> > &into)
+{
+  for(Vector<Variant>::const_iterator cur=variants.begin(),
+	end=variants.end() ; cur!=end ; ++cur) {
+    const Variant &v=*cur;
+    const String &chr=v.getChr();
+    into[chr].push_back(v);
+  }
+}
+
+
+
+void Application::getSeq(const String &twoBitFile,const String &chr,
+			 int begin,int end,String &into)
+{
+  String cmd=String("twoBitToFa -seq=")+chr+" -start="+begin+" -end="+end+
+    " "+twoBitFile+" stdout";
+  Pipe pipe(cmd,"r");
+  String defline=pipe.getline();
+  while(!pipe.eof()) into+=pipe.getline();
+}
+
+
+
+void Application::getSeq(const String &twoBitFile,
+			 const VariableRegion &region,
+			 String &into)
+{
+  getSeq(twoBitFile,region.chr,region.interval.getBegin(),
+	 region.interval.getEnd(),into);
+}
+
+
+
+void Application::makeNgenome(Vector<Variant> &variants,
+			      const String &twoBitFile,
+			      const String &outfile)
+{
+  // Partition SNPs by chr
+  Map<String,Vector<Variant> > byChr;
+  partitionByChr(variants,byChr);
+
+  // Process twoBitFile by chr
+  FastaWriter writer;
+  Set<String> chroms;
+  chromLen.getKeys(chroms);
+  for(Set<String>::const_iterator cur=chroms.begin(), end=chroms.end() ;
+      cur!=end ; ++cur) {
+    const String &chr=*cur;
+    const int L=chromLen[chr];
+    String seq;
+    getSeq(twoBitFile,chr,0,L,seq);
+    if(byChr.isDefined(chr)) setNs(byChr[chr],seq);
+    writer.appendToFasta(String(">")+chr,seq,outfile);
+  }
+}
+
+
+
+void Application::setNs(Vector<Variant> &variants,String &seq)
+{
+  for(Vector<Variant>::const_iterator cur=variants.begin(),
+	end=variants.end() ; cur!=end ; ++cur) {
+    Variant v=*cur;
+    if(v.isIndel()) continue;
+    const int pos=v.getPos()-1;
+    if(v.getAllele(0)[0]!=toupper(seq[pos]))
+      cout<<"ref mismatch: "+seq.substring(pos-1,3)+" vs "+v.getAllele(0)
+	  <<endl;
+    seq[pos]='N';
+  }
+}
+
+
+
+void Application::getIndels(const Vector<Variant> &from,
+			    Vector<Variant> &into)
+{
+  for(Vector<Variant>::const_iterator cur=from.begin(), end=from.end() ;
+      cur!=end ; ++cur)
+    if((*cur).isIndel()) into.push_back(*cur);
+}
+
+
+
+void Application::makeHaplotypes(const Vector<VariableRegion> &regions,
+				 const String &vcfFile,
+				 const String &twoBitFile,
+				 const String &outfile)
+{
+  VcfReader reader(vcfFile);
+  for(Vector<VariableRegion>::const_iterator cur=regions.begin(),
+	end=regions.end() ; cur!=end ; ++cur) {
+    const VariableRegion &region=*cur;
+    String ref;
+    getSeq(twoBitFile,region,ref);
+    makeHaplotypes(region,ref,reader,twoBitFile,outfile);
+  }
+}
+
+
+
+void Application::makeHapRecs(const Vector<VariantAndGenotypes> &recs,
+			      Vector<HaplotypeRecord> &hapRecs)
+{
+  if(recs.size()==0) INTERNAL_ERROR;
+  const VariantAndGenotypes &firstRec=recs[0];
+  const int numGenotypes=firstRec.genotypes.size();
+  for(int g=0 ; g<numGenotypes ; ++g) {
+    const int numAlleles=firstRec.genotypes[g].numAlleles();
+    for(int a=0 ; a<numAlleles ; ++a) {
+      HaplotypeRecord haprec;
+      for(Vector<VariantAndGenotypes>::const_iterator cur=recs.begin(),
+	    end=recs.end() ; cur!=end ; ++cur)
+	haprec.alleles.push_back((*cur).genotypes[g][a]);
+      hapRecs.push_back(haprec);
+    }
+  }
+}
+
+
+
+/*
+void Application::uniquify(Vector<HaplotypeRecord> &hapRecs)
+{
+  Vector<HaplotypeRecord> temp;
+  Set<String> seen;
+  for(Vector<HaplotypeRecord>::const_iterator cur=hapRecs.begin(),
+	end=hapRecs.end() ; cur!=end ; ++cur) {
+    const HaplotypeRecord &rec=*cur;
+    const String hash=rec.hash();
+    if(seen.isMember(hash)) continue;
+    seen+=hash;
+    temp.push_back(rec);
+  }
+  hapRecs=temp;
+}
+*/
+
+
+void Application::makeHaplotypes(const VariableRegion &region,
+				 const String &ref,
+				 VcfReader &reader,
+				 const String &twoBitFile,
+				 const String &outfile)
+{
+  Vector<VariantAndGenotypes> records;
+  VariantAndGenotypes rec;
+
+  // Advance to the first variant in this region
+  while(reader.currentVariant(rec)) {
+    if(wantPrependChr) 
+      rec.variant.getChr()=String("chr")+rec.variant.getChr();
+    if(!region.contains(rec.variant)) {
+      reader.advance();
+      continue; }
+    else break;
+  }
+
+  // Collect variants in this region
+  while(reader.currentVariant(rec)) {
+    if(wantPrependChr) 
+      rec.variant.getChr()=String("chr")+rec.variant.getChr();
+    if(region.contains(rec.variant)) {
+      records.push_back(rec);
+      reader.advance(); }
+    else break;
+  }
+
+  // Process region to produce haplotypes
+  if(records.empty()) throw "No records found for region";
+  Vector<HaplotypeRecord> hapRecs;
+  makeHapRecs(records,hapRecs);
+  /*cout<<"Before:\t"<<hapRecs.size();
+  uniquify(hapRecs);
+  cout<<"\tAfter:\t"<<hapRecs.size()<<endl;*/
+  FastaWriter writer;
+  Set<String> seen;
+  String baseDef=String(">hap:")+region.chr+":"+region.interval.getBegin()
+    +"-"+region.interval.getEnd();
+  int hapID=1;
+  for(Vector<HaplotypeRecord>::const_iterator cur=hapRecs.begin(), 
+	end=hapRecs.end() ; cur!=end ; ++cur) {
+    const HaplotypeRecord &hapRec=*cur;
+    String alt=ref;
+    personalize(alt,hapRec,records);
+    if(seen.isMember(alt)) continue;
+    seen+=alt;
+    String def=baseDef+"_"+hapID;
+    writer.appendToFasta(def,alt,outfile);
+    ++hapID;
+  }
+}
+
+
+
+void Application::personalize(String &seq,const HaplotypeRecord &hapRec,
+			      const Vector<VariantAndGenotypes> &variants)
+{
+  int numVariants=variants.size();
+  if(hapRec.alleles.size()!=numVariants) INTERNAL_ERROR;
+  for(int i=0 ; i<numVariants ; ++i) {
+    const Variant &variant=variants[i].variant;
+    if(variant.isIndel()) {
+      const int allele=hapRec.alleles[i];
+      if(allele==0) continue; // reference
+      const int refLen=variant.getAllele(0).length();
+      const String &altAllele=variant.getAllele(allele);
+      seq.replaceSubstring(variant.getPos(),refLen,altAllele);
+    }
+    else seq[variant.getPos()]='N';
+  }
+}
+
+
 
