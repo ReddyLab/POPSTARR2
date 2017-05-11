@@ -460,31 +460,36 @@ void Application::personalize(String &seq,const HaplotypeRecord &hapRec,
   int numVariants=variants.size();
   if(hapRec.alleles.size()!=numVariants) INTERNAL_ERROR;
   Interval prevInterval(0,0);
+  Variant prevVariant;
   for(int i=numVariants-1 ; i>=0 ; --i) {
     const Variant &variant=variants[i].variant;
-    if(variant.isIndel()) {
+    if(variant.isIndel()) { // INDEL
       const int allele=hapRec.alleles[i];
       if(allele==0) continue; // reference
       const int refLen=variant.getAllele(0).length();
       const String &altAllele=variant.getAllele(allele);
-      //cout<<"indel "<<variant.getPos()<<" "<<regionStart<<" "<<variant.getPos()-regionStart<<" "<<refLen<<endl;
       String refCheck=seq.substring(variant.getPos()-1-regionStart,refLen);
       refCheck.toupper();
       String altCheck=variant.getAllele(0);
       altCheck.toupper();
-      if(refCheck!=altCheck) {
-	cout<<seq.substring(variant.getPos()-1-regionStart,refLen)<<" vs "<<variant.getAllele(0)<<endl;
-	INTERNAL_ERROR;
-      }
-      seq.replaceSubstring(variant.getPos()-1-regionStart,refLen,altAllele);
+      bool OK=true;
+      if(refCheck!=altCheck && 
+	 refCheck.count('N')==0 && altCheck.count('N')==0) {
+	cout<<"ERROR: reference mismatch: "<<refCheck<<" vs "<<altCheck<<endl;
+	OK=false; }
       Interval thisInterval(variant.getPos()-1-regionStart,
 			    variant.getEnd()-1-regionStart);
-      if(thisInterval.overlaps(prevInterval)) INTERNAL_ERROR;
+      if(thisInterval.overlaps(prevInterval)) {
+	cout<<"ERROR: overlapping indels on same haplotype: "
+	    <<prevVariant<<" vs "<<variant<<endl;
+	OK=false; }
+      if(OK)
+	seq.replaceSubstring(variant.getPos()-1-regionStart,refLen,altAllele);
       prevInterval=thisInterval;
+      prevVariant=variant;
     }
-    else {
-      //cout<<"SNP "<<variant.getPos()<<" "<<regionStart<<" "<<variant.getPos()-regionStart<<endl;
-      //seq[variant.getPos()-1-regionStart]='N';
+    else { // SNP
+      seq[variant.getPos()-1-regionStart]='N';
     }
   }
 }
