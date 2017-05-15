@@ -69,7 +69,6 @@ private:
 		      const String &outfile);
   void makeHapRecs(const Vector<VariantAndGenotypes> &,
 		   Vector<HaplotypeRecord> &into);
-  //void uniquify(Vector<HaplotypeRecord> &);
   void personalize(String &seq,const HaplotypeRecord &,
 		   const Vector<VariantAndGenotypes> &,int regionStart);
 };
@@ -380,24 +379,6 @@ void Application::makeHapRecs(const Vector<VariantAndGenotypes> &recs,
   }
 }
 
-
-
-/*
-void Application::uniquify(Vector<HaplotypeRecord> &hapRecs)
-{
-  Vector<HaplotypeRecord> temp;
-  Set<String> seen;
-  for(Vector<HaplotypeRecord>::const_iterator cur=hapRecs.begin(),
-	end=hapRecs.end() ; cur!=end ; ++cur) {
-    const HaplotypeRecord &rec=*cur;
-    const String hash=rec.hash();
-    if(seen.isMember(hash)) continue;
-    seen+=hash;
-    temp.push_back(rec);
-  }
-  hapRecs=temp;
-}
-*/
 
 
 void Application::makeHaplotypes(const VariableRegion &region,
