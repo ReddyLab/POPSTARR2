@@ -16,45 +16,46 @@ from Rex import Rex
 rex=Rex()
 
 class Read:
-    def __init__(self,id,variants,alleles):
+    def __init__(self,id,variants):
         self.id=id
         self.variants=variants
-        self.alleles=alleles
 
 class Variant:
-    def __init__(self,pos,id):
+    def __init__(self,pos,id,allele):
         self.id=id
         self.pos=pos
+        self.allele=allele
 
 class Allele:
     def __init__(self,pos,seq):
         self.pos=pos
         self.seq=seq
 
-def parseAttributes(fields):
-    print(len(fields))
-    variants=[]; alleles=[]
+def parseAttributes(fields,seq):
+    variants=set(); alleles=[]
     for i in range(11,len(fields)):
         if(rex.find("Zs:Z:(\S+)",fields[i])):
-            variants=parseVariants(rex[1])
+            variants=parseVariants(rex[1],seq)
         elif(rex.find("MD:Z:(\S+)",fields[i])):
             alleles=parseAlleles(rex[1])
     return (variants,alleles)
 
-def parseVariants(text):
-    variants=[]
+def parseVariants(text,seq):
+    variants=set()
     fields=text.split(",")
     for field in fields:
         if(rex.find("(\d+)\|S\|(\S+)",field)):
-            variant=Variant(int(rex[1]),rex[2])
-            variants.append(variant)
+            pos=int(rex[1])
+            variant=Variant(pos,rex[2],seq[pos])
+            variants.add(variant)
     return variants
 
 def parseAlleles(text):
     alleles=[]
-    while(rex.find("^(\d+)(\D+)",text)):
+    while(rex.find("^(\d+)(\D+)(\S*)",text)):
         allele=Allele(int(rex[1]),rex[2])
         alleles.append(allele)
+        text=rex[3]
     return alleles
 
 def getRead(IN):
@@ -66,9 +67,17 @@ def getRead(IN):
         if(len(fields)<12): continue
         break
     (readID,flags,chrom,pos,x,cigar,equals,otherPos,d,seq,qual)=fields[:11]
-    (variants,alleles)=parseAttributes(fields)
-    read=Read(readID,variants,alleles)
+    (variants,alleles)=parseAttributes(fields,seq)
+    assignAllelesToVariants(variants,alleles)
+    read=Read(readID,variants)
     return read
+
+def assignAllelesToVariants(variants,alleles):
+    for allele in alleles:
+        for variant in variants:
+            if(allele.pos==variant.pos):
+                variant.allele=allele.seq
+                break
 
 #=========================================================================
 # main()
@@ -77,12 +86,23 @@ if(len(sys.argv)!=2):
     exit(ProgramName.get()+" <in.sam>\n")
 (infile,)=sys.argv[1:]
 
+reads=[]
+lastRead=None
 IN=open(infile,"rt")
 while(True):
     read=getRead(IN)
     if(read is None): break
-
-    
+    if(lastRead and read.id==lastRead.id):
+        for variant in read.variants:
+            lastRead.variants.add(variant) # this avoids double-counting
+    elif(len(read.variants)>0): reads.append(read)
+    lastRead=read
 IN.close()
-
+for read in reads:
+    seen=set()
+    for variant in read.variants:
+        key=variant.id+" "+variant.allele
+        if(key in seen): continue
+        print(variant.id,variant.allele,sep="\t")
+        seen.add(key)
 
