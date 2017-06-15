@@ -79,6 +79,11 @@ def assignAllelesToVariants(variants,alleles):
                 variant.allele=allele.seq
                 break
 
+def incAlleleCount(hash,id,allele):
+    alleles=hash.get(id)
+    if(alleles is None): alleles=hash[id]={}
+    alleles[allele]=alleles.get(allele,0)+1
+
 #=========================================================================
 # main()
 #=========================================================================
@@ -86,6 +91,7 @@ if(len(sys.argv)!=2):
     exit(ProgramName.get()+" <in.sam>\n")
 (infile,)=sys.argv[1:]
 
+# Process all reads
 reads=[]
 lastRead=None
 IN=open(infile,"rt")
@@ -98,11 +104,22 @@ while(True):
     elif(len(read.variants)>0): reads.append(read)
     lastRead=read
 IN.close()
+
+# Count alleles
+alleleCounts={}
 for read in reads:
     seen=set()
     for variant in read.variants:
         key=variant.id+" "+variant.allele
         if(key in seen): continue
-        print(variant.id,variant.allele,sep="\t")
+        incAlleleCount(alleleCounts,variant.id,variant.allele)
         seen.add(key)
+
+# Generate output
+for variantID in alleleCounts.keys():
+    print(variantID,end="")
+    alleles=alleleCounts[variantID]
+    for allele in alleles.keys():
+        print("\t"+allele+"="+str(alleles[allele]),end="")
+    print()
 
