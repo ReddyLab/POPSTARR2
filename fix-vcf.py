@@ -11,29 +11,32 @@ from builtins import (bytes, dict, int, list, object, range, str, ascii,
 # The above imports should allow this program to run in both Python 2 and
 # Python 3.  You might need to update your version of module "future".
 import sys
-from Rex import Rex
-rex=Rex()
+import ProgramName
+import gzip
 
 #=========================================================================
 # main()
 #=========================================================================
-counts={}
-for line in sys.stdin:
-    fields=line.rstrip().split()
-    id=fields[0]
-    alleles=counts.get(id,None)
-    if(alleles is None): alleles=counts[id]={}
-    for field in fields[1:]:
-        if(not rex.find("(\S+)=(\d+)",field)):
-            raise Exception("can't parse field: "+field)
-        allele=rex[1]
-        count=int(rex[2])
-        alleles[allele]=alleles.get(allele,0)+count
-for variant in counts.keys():
-    print(variant,end="")
-    alleles=counts[variant]
-    for allele in alleles.keys():
-        count=alleles[allele]
-        print("\t"+allele+"="+str(count),end="")
-    print()
+if(len(sys.argv)!=2):
+    exit(ProgramName.get()+" <in.vcf.gz>\n")
+(infile,)=sys.argv[1:]
+
+variants={}
+for line in gzip.open(infile):
+    line=line.decode("utf-8").rstrip()
+    if(len(line)>0 and line[0]=="#"):
+        print(line)
+        continue
+    fields=line.split("\t")
+    if(len(fields)>=9):
+        if(len(fields[0])<3 or fields[0][:3]!="chr"):
+            fields[0]="chr"+fields[0]
+        if(fields[2]=="."): fields[2]=fields[0]+"@"+fields[1]
+        line=""
+        for field in fields[:len(fields)-1]: line+=field+"\t"
+        line+=fields[len(fields)-1]
+        print(line)
+    else:
+        print(line)
+        continue
 
