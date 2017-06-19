@@ -30,7 +30,7 @@ def getCounts(filename,variants):
         if(variant is None): continue
         hash=counts.get(id,None)
         if(hash is None): hash=counts[id]={}
-        (ref,alt)=variant
+        (ref,alt)=variant[:2]
         for field in fields[1:]:
             if(not rex.find("(\S+)=(\d+)",field)):
                 raise Exception("can't parse "+field)
@@ -57,7 +57,7 @@ for line in gzip.open(vcf):
     if(len(fields)<9): continue
     (chr,pos,id,ref,alt,x,Pass,flags,GT)=fields[:9]
     if(id=="."): continue
-    variants[id]=[ref,alt]
+    variants[id]=[ref,alt,chr,pos]
 
 # Process DNA and RNA files
 dnaCounts=getCounts(dnaFile,variants)
@@ -67,7 +67,7 @@ rnaCounts=getCounts(rnaFile,variants)
 pvalues=[]
 tests=[]
 for variant in dnaCounts.keys():
-    (ref,alt)=variants[variant]
+    (ref,alt,chr,pos)=variants[variant]
     dnaRec=dnaCounts[variant]
     rnaRec=rnaCounts.get(variant,None)
     if(rnaRec is None): continue
@@ -80,8 +80,11 @@ for variant in dnaCounts.keys():
     pvalues.append(P)
     tests.append([variant,P,dnaRef,dnaAlt,rnaRef,rnaAlt,ref,alt])
 (reject,q)=multipletests(pvalues,ALPHA,"fdr_bh")[:2]
+print("chrom\tpos\tvariant\tP\tPadj\tDNAref\tDNAalt\tRNAref\tRNAalt\tref\talt")
 for i in range(len(q)):
-    if(q[i]<=ALPHA):
+    #if(q[i]<=ALPHA):
+    if(True):
         (variant,P,dnaRef,dnaAlt,rnaRef,rnaAlt,ref,alt)=tests[i]
-        print(variant,P,q[i],dnaRef,dnaAlt,rnaRef,rnaAlt,ref,alt,sep="\t")
+        (ref,alt,chr,pos)=variants[variant]
+        print(chr,pos,variant,P,q[i],dnaRef,dnaAlt,rnaRef,rnaAlt,ref,alt,sep="\t")
 
