@@ -31,31 +31,46 @@ class Allele:
         self.seq=seq
 
 def parseAttributes(fields,seq):
-    variants=set(); alleles=[]
+    variants=[]; alleles=[]
     for i in range(11,len(fields)):
         if(rex.find("Zs:Z:(\S+)",fields[i])):
             variants=parseVariants(rex[1],seq)
-        elif(rex.find("MD:Z:(\S+)",fields[i])):
-            alleles=parseAlleles(rex[1])
+        #elif(rex.find("MD:Z:(\S+)",fields[i])):
+        #    alleles=parseAlleles(rex[1])
     return (variants,alleles)
 
 def parseVariants(text,seq):
-    variants=set()
+    variants=[]
     fields=text.split(",")
+    pos=0
     for field in fields:
         if(rex.find("(\d+)\|S\|(\S+)",field)):
-            pos=int(rex[1])
-            variant=Variant(pos,rex[2],seq[pos])
-            variants.add(variant)
+            relpos=int(rex[1])
+            pos+=relpos
+            variant=Variant(pos,rex[2],seq[pos]) ###
+            variants.append(variant)
+            pos+=1
+        elif(rex.find("(\d+)\|I\|(\S+)",field)):
+            relpos=int(rex[1])
+            pos+=relpos
+        #    variant=Variant(pos,rex[2],seq[pos])
+        #    variants.add(variant)
+            pos+=1
+        elif(rex.find("(\d+)\|D\|(\S+)",field)):
+            relpos=int(rex[1])
+            pos+=relpos
+        #    variant=Variant(pos,rex[2],seq[pos])
+        #    variants.add(variant)
+            pos+=1
     return variants
 
-def parseAlleles(text):
-    alleles=[]
-    while(rex.find("^(\d+)(\D+)(\S*)",text)):
-        allele=Allele(int(rex[1]),rex[2])
-        alleles.append(allele)
-        text=rex[3]
-    return alleles
+#def parseAlleles(text):
+#    alleles=[]
+#    while(rex.find("^(\d+)(\D+)(\S*)",text)):
+#        allele=Allele(int(rex[1]),rex[2])
+#        alleles.append(allele)
+#        text=rex[3]
+#    return alleles
 
 def getRead(IN):
     while(True):
@@ -91,7 +106,7 @@ if(len(sys.argv)!=2):
 (infile,)=sys.argv[1:]
 
 # Process all reads
-reads=[]
+fragments=[]
 lastRead=None
 IN=open(infile,"rt")
 while(True):
@@ -99,26 +114,33 @@ while(True):
     if(read is None): break
     if(lastRead and read.id==lastRead.id):
         for variant in read.variants:
-            lastRead.variants.add(variant) # this avoids double-counting
-    elif(len(read.variants)>0): reads.append(read)
+            lastRead.variants.append(variant)
+    elif(len(read.variants)>0): fragments.append(read)
     lastRead=read
 IN.close()
 
 # Count alleles
 alleleCounts={}
-for read in reads:
+for fragment in fragments:
     seen=set()
-    for variant in read.variants:
-        key=variant.id+" "+variant.allele
+    for variant in fragment.variants:
+        #key=variant.id+" "+variant.allele
+        key=variant.id
         if(key in seen): continue
         incAlleleCount(alleleCounts,variant.id,variant.allele)
         seen.add(key)
 
 # Generate output
-for variantID in alleleCounts.keys():
+variantsSorted=[]
+for variantID in alleleCounts.keys(): variantsSorted.append(variantID)
+variantsSorted.sort()
+for variantID in variantsSorted:
     print(variantID,end="")
     alleles=alleleCounts[variantID]
-    for allele in alleles.keys():
+    keysSorted=[]
+    for allele in alleles.keys(): keysSorted.append(allele)
+    keysSorted.sort()
+    for allele in keysSorted:
         print("\t"+allele+"="+str(alleles[allele]),end="")
     print()
 

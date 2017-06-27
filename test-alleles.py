@@ -37,15 +37,16 @@ def getCounts(filename,variants):
             count=int(rex[2])
             if(allele==ref): hash["ref"]=count
             elif(allele==alt): hash["alt"]=count
+            else: pass # multiallelic locus: ignore all but first alt allele
     IN.close()
     return counts
 
 #=========================================================================
 # main()
 #=========================================================================
-if(len(sys.argv)!=5):
-    exit(ProgramName.get()+" <in.vcf.gz> <dna.counts> <rna.counts> <alpha>\n")
-(vcf,dnaFile,rnaFile,ALPHA)=sys.argv[1:]
+if(len(sys.argv)!=6):
+    exit(ProgramName.get()+" <in.vcf.gz> <dna.counts> <rna.counts> <alpha> <all|sig>\n")
+(vcf,dnaFile,rnaFile,ALPHA,allOrSig)=sys.argv[1:]
 ALPHA=float(ALPHA)
 
 # Process the VCF file to get the ref and alt alleles
@@ -55,12 +56,14 @@ for line in gzip.open(vcf):
     fields=line.decode("utf-8").rstrip().split()
     if(len(fields)<9): continue
     (chr,pos,id,ref,alt,x,Pass,flags,GT)=fields[:9]
+    altFields=alt.split(",")
+    alt=altFields[0] # Keeping only the first alternate allele
     if(id=="."): continue
     variants[id]=[ref,alt,chr,pos]
 
 # Process DNA and RNA files
-dnaCounts=getCounts(dnaFile,variants)
 rnaCounts=getCounts(rnaFile,variants)
+dnaCounts=getCounts(dnaFile,variants)
 
 # Test for differences
 pvalues=[]
@@ -79,11 +82,14 @@ for variant in dnaCounts.keys():
     pvalues.append(P)
     tests.append([variant,P,dnaRef,dnaAlt,rnaRef,rnaAlt,ref,alt])
 (reject,q)=multipletests(pvalues,ALPHA,"fdr_bh")[:2]
-print("chrom\tpos\tvariant\tP\tPadj\tDNAref\tDNAalt\tRNAref\tRNAalt\tref\talt")
+print("chrom\tpos\tvariant\tP\tPadj\teffect\tDNAref\tDNAalt\tRNAref\tRNAalt\tref\talt")
 for i in range(len(q)):
-    #if(q[i]<=ALPHA):
-    if(True):
+    if(allOrSig=="all" or (allOrSig=="sig" and q[i]<=ALPHA)):
         (variant,P,dnaRef,dnaAlt,rnaRef,rnaAlt,ref,alt)=tests[i]
         (ref,alt,chr,pos)=variants[variant]
-        print(chr,pos,variant,P,q[i],dnaRef,dnaAlt,rnaRef,rnaAlt,ref,alt,sep="\t")
+        #if(dnaRef==0 or dnaAlt==0 or rnaRef==0): continue
+        effectSize=(rnaAlt/dnaAlt)/(rnaRef/dnaRef) if dnaRef>0 and \
+            dnaAlt>0 and rnaRef>0 else 0
+        print(chr,pos,variant,P,q[i],effectSize,dnaRef,dnaAlt,rnaRef,
+              rnaAlt,ref,alt,sep="\t")
 
