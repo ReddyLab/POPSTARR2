@@ -16,12 +16,28 @@ import gzip
 from Rex import Rex
 rex=Rex()
 
+ACGT=set(["A","C","G","T"])
+
 class Variant:
     def __init__(self,pos,id,ref,alt):
         self.id=id
         self.pos=pos
         self.ref=ref
         self.alt=alt
+
+def removeIndels(bases):
+    while(rex.find("(\S*)[+-](\d+)(\S*)",bases)):
+        left=rex[1]; indelLen=int(rex[2]); right=rex[3]
+        bases=left+right[indelLen:]
+    return bases
+
+def parseBases(bases):
+    bases=removeIndels(bases)
+    bases=bases.upper()
+    counts={}
+    for c in bases:
+        if(c in ACGT): counts[c]=counts.get(c,0)+1
+    return counts
 
 #=========================================================================
 # main()
@@ -59,12 +75,15 @@ for line in open(pileup,"rt"):
         prevChr=chr
         nextVariant=0
     while(nextVariant<len(variantsOnChr) and
-          variantsOnChr[nextVariant].pos!=pos-1):
+          variantsOnChr[nextVariant].pos<pos-1):
         nextVariant+=1
     if(nextVariant>=len(variantsOnChr)): continue
     variant=variantsOnChr[nextVariant]
-    if(variant.pos!=pos): raise Exception(line)
-    print(variant.id,chr,variant.pos,variant.ref,variant.alt,seq,sep="\t")
-
+    if(variant.pos!=pos): continue
+    if(len(variant.ref)>1 or len(variant.alt)>1): continue # indel
+    counts=parseBases(seq)
+    refCount=counts.get(variant.ref,0)
+    altCount=counts.get(variant.alt,0)
+    print(variant.id,chr,variant.pos,variant.ref,variant.alt,refCount,altCount,sep="\t")
 
 

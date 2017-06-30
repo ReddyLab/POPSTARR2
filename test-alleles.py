@@ -17,37 +17,26 @@ rex=Rex()
 from scipy import stats
 from statsmodels.stats.multitest import multipletests
 
-def getCounts(filename,variants):
+def getCounts(filename,variants,MIN_COUNT):
     counts={}
-    IN=open(filename,"rt")
-    for line in IN:
-        fields=line.rstrip().split()
-        if(len(fields)<2): continue
-        id=fields[0]
-        if(id=="."): continue
-        variant=variants.get(id,None)
-        if(variant is None): continue
-        hash=counts.get(id,None)
-        if(hash is None): hash=counts[id]={}
-        (ref,alt)=variant[:2]
-        for field in fields[1:]:
-            if(not rex.find("(\S+)=(\d+)",field)):
-                raise Exception("can't parse "+field)
-            allele=rex[1]
-            count=int(rex[2])
-            if(allele==ref): hash["ref"]=count
-            elif(allele==alt): hash["alt"]=count
-            else: pass # multiallelic locus: ignore all but first alt allele
-    IN.close()
+    with open(filename,"rt") as IN:
+        for line in IN:
+            fields=line.rstrip().split()
+            if(len(fields)!=7): continue
+            (id,chr,pos,ref,alt,refCount,altCount)=fields
+            refCount=int(refCount); altCount=int(altCount)
+            if(refCount+altCount<MIN_COUNT): continue
+            counts[id]=[refCount,altCount]
     return counts
 
 #=========================================================================
 # main()
 #=========================================================================
-if(len(sys.argv)!=6):
-    exit(ProgramName.get()+" <in.vcf.gz> <dna.counts> <rna.counts> <alpha> <all|sig>\n")
-(vcf,dnaFile,rnaFile,ALPHA,allOrSig)=sys.argv[1:]
+if(len(sys.argv)!=7):
+    exit(ProgramName.get()+" <in.vcf.gz> <dna.counts> <rna.counts> <alpha> <all|sig> <min-count>\n")
+(vcf,dnaFile,rnaFile,ALPHA,allOrSig,MIN_COUNT)=sys.argv[1:]
 ALPHA=float(ALPHA)
+MIN_COUNT=int(MIN_COUNT)
 
 # Process the VCF file to get the ref and alt alleles
 variants={}
@@ -62,8 +51,8 @@ for line in gzip.open(vcf):
     variants[id]=[ref,alt,chr,pos]
 
 # Process DNA and RNA files
-rnaCounts=getCounts(rnaFile,variants)
-dnaCounts=getCounts(dnaFile,variants)
+rnaCounts=getCounts(rnaFile,variants,MIN_COUNT)
+dnaCounts=getCounts(dnaFile,variants,MIN_COUNT)
 
 # Test for differences
 pvalues=[]
@@ -73,10 +62,8 @@ for variant in dnaCounts.keys():
     dnaRec=dnaCounts[variant]
     rnaRec=rnaCounts.get(variant,None)
     if(rnaRec is None): continue
-    dnaRef=dnaRec.get("ref",0)
-    dnaAlt=dnaRec.get("alt",0)
-    rnaRef=rnaRec.get("ref",0)
-    rnaAlt=rnaRec.get("alt",0)
+    (dnaRef,dnaAlt)=dnaRec
+    (rnaRef,rnaAlt)=rnaRec
     table=[[dnaRef,dnaAlt],[rnaRef,rnaAlt]]
     (oddsRatio,P)=stats.fisher_exact(table)
     pvalues.append(P)
@@ -88,8 +75,10 @@ for i in range(len(q)):
         (variant,P,dnaRef,dnaAlt,rnaRef,rnaAlt,ref,alt)=tests[i]
         (ref,alt,chr,pos)=variants[variant]
         #if(dnaRef==0 or dnaAlt==0 or rnaRef==0): continue
-        effectSize=(rnaAlt/dnaAlt)/(rnaRef/dnaRef) if dnaRef>0 and \
-            dnaAlt>0 and rnaRef>0 else 0
+        #effectSize=(rnaAlt/dnaAlt)/(rnaRef/dnaRef) if dnaRef>0 and \
+        #    dnaAlt>0 and rnaRef>0 else 0
+        dnaRef+=1; dnaAlt+=1; rnaRef+=1; rnaAlt+=1
+        effectSize=(rnaAlt/dnaAlt)/(rnaRef/dnaRef)
         print(chr,pos,variant,P,q[i],effectSize,dnaRef,dnaAlt,rnaRef,
               rnaAlt,ref,alt,sep="\t")
 
