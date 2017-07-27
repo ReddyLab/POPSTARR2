@@ -32,11 +32,12 @@ def getCounts(filename,variants,MIN_COUNT):
 #=========================================================================
 # main()
 #=========================================================================
-if(len(sys.argv)!=7):
-    exit(ProgramName.get()+" <in.vcf.gz> <dna.counts> <rna.counts> <alpha> <all|sig> <min-count>\n")
-(vcf,dnaFile,rnaFile,ALPHA,allOrSig,MIN_COUNT)=sys.argv[1:]
+if(len(sys.argv)!=8):
+    exit(ProgramName.get()+" <in.vcf.gz> <dna.counts> <rna.counts> <alpha> <all|sig> <min-count> <pseudocount>\n")
+(vcf,dnaFile,rnaFile,ALPHA,allOrSig,MIN_COUNT,PSEUDOCOUNT)=sys.argv[1:]
 ALPHA=float(ALPHA)
 MIN_COUNT=int(MIN_COUNT)
+PSEUDOCOUNT=int(PSEUDOCOUNT)
 
 # Process the VCF file to get the ref and alt alleles
 variants={}
@@ -74,10 +75,11 @@ for i in range(len(q)):
     if(allOrSig=="all" or (allOrSig=="sig" and q[i]<=ALPHA)):
         (variant,P,dnaRef,dnaAlt,rnaRef,rnaAlt,ref,alt)=tests[i]
         (ref,alt,chr,pos)=variants[variant]
-        #if(dnaRef==0 or dnaAlt==0 or rnaRef==0): continue
+        if(dnaRef==0 or dnaAlt==0 or rnaRef==0 or rnaAlt==0): continue
         #effectSize=(rnaAlt/dnaAlt)/(rnaRef/dnaRef) if dnaRef>0 and \
         #    dnaAlt>0 and rnaRef>0 else 0
-        dnaRef+=1; dnaAlt+=1; rnaRef+=1; rnaAlt+=1
+        dnaRef+=PSEUDOCOUNT; dnaAlt+=PSEUDOCOUNT;
+        rnaRef+=PSEUDOCOUNT; rnaAlt+=PSEUDOCOUNT
         effectSize=(rnaAlt/dnaAlt)/(rnaRef/dnaRef)
         print(chr,pos,variant,P,q[i],effectSize,dnaRef,dnaAlt,rnaRef,
               rnaAlt,ref,alt,sep="\t")
