@@ -39,6 +39,7 @@ hisat=load(hisatFile)
 keys=bowtie.keys()
 rnaGreater=0; rnaLess=0; rnaSame=0
 dnaGreater=0; dnaLess=0; dnaSame=0
+agree=0; disagree=0
 for variant in keys:
     if(hisat.get(variant,None)==None): continue
     pair=bowtie[variant]
@@ -52,10 +53,23 @@ for variant in keys:
     elif(hisatDNAfreq<bowtieDNAfreq): dnaLess+=1
     elif(hisatDNAfreq==bowtieDNAfreq): dnaSame+=1
 
-    if(hisatRNAfreq>bowtieRNAfreq): print("RNA\tINCREASE\t",variant)
-    elif(hisatRNAfreq<bowtieRNAfreq): print("RNA\tDECREASE\t",variant)
-    if(hisatDNAfreq>bowtieDNAfreq): print("DNA\tINCREASE\t",variant)
-    elif(hisatDNAfreq<bowtieDNAfreq): print("DNA\tDECREASE\t",variant)
+    if(hisatRNAfreq>bowtieRNAfreq):
+        print("RNA\tINCREASE\t",variant,hisatRNAfreq,bowtieRNAfreq,
+              (hisatRNAfreq-bowtieRNAfreq)/bowtieRNAfreq)
+    elif(hisatRNAfreq<bowtieRNAfreq): 
+        print("RNA\tDECREASE\t",variant,hisatRNAfreq,bowtieRNAfreq,
+              (hisatRNAfreq-bowtieRNAfreq)/bowtieRNAfreq)
+    if(hisatDNAfreq>bowtieDNAfreq): 
+        print("DNA\tINCREASE\t",variant,hisatDNAfreq,bowtieDNAfreq,
+              (hisatDNAfreq-bowtieDNAfreq)/bowtieDNAfreq)
+    elif(hisatDNAfreq<bowtieDNAfreq): 
+        print("DNA\tDECREASE\t",variant,hisatDNAfreq,bowtieDNAfreq,
+              (hisatDNAfreq-bowtieDNAfreq)/bowtieDNAfreq)
+    print()
+    if(hisatRNAfreq>bowtieRNAfreq and hisatDNAfreq>bowtieDNAfreq or
+       hisatRNAfreq<bowtieRNAfreq and hisatDNAfreq<bowtieDNAfreq): agree+=1
+    if(hisatRNAfreq>bowtieRNAfreq and hisatDNAfreq<bowtieDNAfreq or
+       hisatRNAfreq<bowtieRNAfreq and hisatDNAfreq>bowtieDNAfreq): disagree+=1
 
     #print(bowtieRNAfreq,hisatRNAfreq,sep="\t")
     #print(bowtieDNAfreq,hisatDNAfreq,sep="\t")
@@ -67,7 +81,7 @@ dnaGreater=float(dnaGreater)/dnaTotal
 dnaLess=float(dnaLess)/dnaTotal
 print("RNA: ",rnaGreater,"increase,",rnaSame,"same,",rnaLess,"decrease")
 print("DNA: ",dnaGreater,"increase,",dnaSame,"same,",dnaLess,"decrease")
-
+print(agree,"agree,",disagree,"disagree")
 
 
 
